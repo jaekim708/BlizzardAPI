@@ -13,6 +13,10 @@ Small:
     clean up error message that occurs if not all required fields are provided
     check for duplicate account IDs
     check for duplicate character IDs
+    delete/undelete characters
+    error if delete function called w/Empty usernames
+    should account deletion irreversibly delete all characters?
+    spaces in user/character names
 """
 app = Flask(__name__)
 
@@ -22,6 +26,7 @@ accounts = [
         'username': 'bob',
         'faction': 'alliance',
         'char_ids': [0],
+        'deleted_char_ids': [],
         'link': '{http://127.0.0.1:5000/account/bob}'
 
     }
@@ -35,8 +40,8 @@ characters = [
         'level': 85,
         'race': 'human',
         'class': 'warrior',
-        'faction': 'alliance'
-
+        'faction': 'alliance',
+        'active': True
 
     }
 ]
@@ -83,7 +88,6 @@ def new_char(account_name):
     char_class = request.get_json()['class'].lower()
     char_faction = request.get_json()['faction'].lower()
     char_level = request.get_json()['level']
-    print "a"
     user_acc = [acc for acc in accounts if acc['username'] == account_name]
     if len(user_acc) == 0:
         raise InvalidInput('Specified user not found.',
@@ -127,7 +131,52 @@ def new_char(account_name):
     return jsonify({'character_id': new_char_id})
 
 
- 
+@app.route('/account/<account_name>', methods=['DELETE'])
+def delete_account(account_name):
+    """
+     curl -H "Content-type: application/json" -X DELETE http://127.0.0.1:5000/account/bob
+    """
+    user_acc = [acc for acc in accounts if acc['username'] == account_name]
+    if len(user_acc) == 0:
+        raise InvalidInput('Specified user not found.', status_code=404)
+    user_acc = user_acc[0]
+    for char_id in user_acc['char_ids']:
+        del characters[char_id]
+    del accounts[user_acc['account_id']]
+
+    return jsonify({'message': 'Account -' + account_name +
+                               '- successfully deleted.'})
+
+@app.route('/account/<account_name>/characters/<char_name>', methods=['DELETE'])
+def delete_character(account_name, char_name):
+    """
+    curl -H "Content-type: application/json" -X DELETE http://127.0.0.1:5000/account/bob/characters/Leeroy%20Jenkins
+    """
+    user_acc = [acc for acc in accounts if acc['username'] == account_name]
+    if len(user_acc) == 0:
+        raise InvalidInput('Specified user not found.', status_code=404)
+    user_acc = user_acc[0]
+    user_chars = user_acc['char_ids']
+
+    character = [characters[c] for c in user_chars
+                 if characters[c]['name'] == char_name]
+
+    if len(character) == 0:
+        raise InvalidInput('Specified character not found.', status_code=404)
+    del_char = character[0]
+
+    del user_acc['char_ids'][del_char['char_id']]
+    user_acc['deleted_char_ids'].append(del_char['char_id'])
+
+    if len(user_acc['char_ids']) == 0:
+        user_acc['faction'] = None
+
+    del_char['active'] = False
+
+    return jsonify({'message': 'Character -' + char_name +
+                               '- belonging to -' + account_name +
+                               '- was successfully deleted.'})
+
 class InvalidInput(Exception):
     """
     From http://flask.pocoo.org/docs/0.10/patterns/apierrors/
