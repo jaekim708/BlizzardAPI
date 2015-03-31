@@ -177,6 +177,27 @@ def delete_character(account_name, char_name):
                                '- belonging to -' + account_name +
                                '- was successfully deleted.'})
 
+@app.route('/account/<account_name>/characters', methods=['GET'])
+def get_chars(account_name):
+    """
+    curl -H "Content-type: application/json" -X GET http://127.0.0.1:5000/account/bob/characters
+
+    """
+    user_acc = [acc for acc in accounts if acc['username'] == account_name]
+    if len(user_acc) == 0:
+        raise InvalidInput('Specified user not found.', status_code=404)
+    user_acc = user_acc[0]
+
+    acc_char_ids = user_acc['char_ids']
+    acc_chars = [c for c in characters if c['char_id'] in acc_char_ids]
+
+    if len(user_acc['char_ids']) == 0:
+        return jsonify({'message': 'This user has 0 active characters.'})
+    else:
+        return jsonify({'account_id': user_acc['account_id'],
+                        'characters': acc_chars})
+
+
 class InvalidInput(Exception):
     """
     From http://flask.pocoo.org/docs/0.10/patterns/apierrors/
