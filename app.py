@@ -1,5 +1,3 @@
-__author__ = 'jae'
-
 from flask import Flask, jsonify, request, abort, make_response, render_template
 from enum import Enum
 
@@ -9,14 +7,17 @@ Big:
     figure out how to host website
 
 Small:
-    clean up error message that occurs if 'username' is spelled wrong
     clean up error message that occurs if not all required fields are provided
-    check for duplicate account IDs
-    check for duplicate character IDs
-    delete/undelete characters
     error if delete function called w/Empty usernames
     should account deletion irreversibly delete all characters?
-    spaces in user/character names
+
+    check user/character name validity
+
+    Undeletion -
+        prevent undeletion of horde chars while alliance, vice versa
+        modify active status & active chars fields of char & user
+
+    check username at least 1 character.
 """
 app = Flask(__name__)
 
@@ -64,14 +65,26 @@ def account():
     curl -H "Content-type: application/json" -X POST http://127.0.0.1:5000/account
     """
     if request.method == 'POST':
+        try:
+            new_username = request.get_json(force=True)['username']
+        except KeyError, e:
+            raise InvalidInput('Ill-formed or misspelled request.',
+                               status_code=404)
         new_acc_id = len(accounts)
+
+        if new_username == None or new_username == '':
+            raise InvalidInput('Account name not specified.', status_code=400)
+
+        if len([acc for acc in accounts if
+                acc['username'] == new_username]) != 0:
+            raise InvalidInput('Account name already taken.', status_code=400)
+
         new_user = {
             'account_id': new_acc_id,
-            'username': request.get_json()['username'],
+            'username': new_username,
             'char_ids': [],
             'faction': None,
-            'link': '{http://127.0.0.1:5000/account/' + \
-                    request.get_json()['username'] + '}'
+            'link': '{http://127.0.0.1:5000/account/' + new_username + '}'
         }
         accounts.append(new_user)
         return jsonify({'account_id' : new_acc_id})
@@ -83,17 +96,21 @@ def new_char(account_name):
     """
     curl -H "Content-type: application/json" -X POST http://127.0.0.1:5000/account/Jae/characters -d '{"name": "Jar", "race": "orc", "class": "warrior", "faction": "horde", "level": 80}'
     """
-    char_name = request.get_json()['name']
-    char_race = request.get_json()['race'].lower()
-    char_class = request.get_json()['class'].lower()
-    char_faction = request.get_json()['faction'].lower()
-    char_level = request.get_json()['level']
-    user_acc = [acc for acc in accounts if acc['username'] == account_name]
-    if len(user_acc) == 0:
-        raise InvalidInput('Specified user not found.',
+    try:
+        char_name = request.get_json(force=True)['name']
+        char_race = request.get_json(force=True)['race'].lower()
+        char_class = request.get_json(force=True)['class'].lower()
+        char_faction = request.get_json(force=True)['faction'].lower()
+        char_level = request.get_json(force=True)['level']
+    except KeyError, e:
+        raise InvalidInput('Ill-formed or misspelled request.',
                            status_code=404)
 
+    user_acc = [acc for acc in accounts if acc['username'] == account_name]
+    if len(user_acc) == 0:
+        raise InvalidInput('Specified user not found.', status_code=404)
     user_acc = user_acc[0]
+
     if char_level < 1 or char_level > 85:
         raise InvalidInput('Character levels must be between 1 and 85',
                            status_code=400)
@@ -137,9 +154,11 @@ def delete_account(account_name):
      curl -H "Content-type: application/json" -X DELETE http://127.0.0.1:5000/account/bob
     """
     user_acc = [acc for acc in accounts if acc['username'] == account_name]
+
     if len(user_acc) == 0:
         raise InvalidInput('Specified user not found.', status_code=404)
     user_acc = user_acc[0]
+
     for char_id in user_acc['char_ids']:
         del characters[char_id]
     del accounts[user_acc['account_id']]
@@ -153,25 +172,26 @@ def delete_character(account_name, char_name):
     curl -H "Content-type: application/json" -X DELETE http://127.0.0.1:5000/account/bob/characters/Leeroy%20Jenkins
     """
     user_acc = [acc for acc in accounts if acc['username'] == account_name]
+
     if len(user_acc) == 0:
         raise InvalidInput('Specified user not found.', status_code=404)
     user_acc = user_acc[0]
-    user_chars = user_acc['char_ids']
 
+    user_chars = user_acc['char_ids']
     character = [characters[c] for c in user_chars
                  if characters[c]['name'] == char_name]
 
     if len(character) == 0:
         raise InvalidInput('Specified character not found.', status_code=404)
-    del_char = character[0]
+    char_to_del = character[0]
 
-    del user_acc['char_ids'][del_char['char_id']]
-    user_acc['deleted_char_ids'].append(del_char['char_id'])
+    del user_acc['char_ids'][char_to_del['char_id']]
+    user_acc['deleted_char_ids'].append(char_to_del['char_id'])
 
     if len(user_acc['char_ids']) == 0:
         user_acc['faction'] = None
 
-    del_char['active'] = False
+    char_to_del['active'] = False
 
     return jsonify({'message': 'Character -' + char_name +
                                '- belonging to -' + account_name +
@@ -192,7 +212,7 @@ def get_chars(account_name):
     acc_chars = [c for c in characters if c['char_id'] in acc_char_ids]
 
     if len(user_acc['char_ids']) == 0:
-        return jsonify({'message': 'This user has 0 active characters.'})
+        return jsonify({'message': 'This does not have any active characters.'})
     else:
         return jsonify({'account_id': user_acc['account_id'],
                         'characters': acc_chars})
@@ -210,7 +230,7 @@ class InvalidInput(Exception):
 
     def to_dict(self):
         rv = dict(self.payload or ())
-        rv['message'] = self.message
+        rv['Error'] = self.message
         return rv
 
 @app.errorhandler(InvalidInput)
