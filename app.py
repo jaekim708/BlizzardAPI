@@ -17,7 +17,6 @@ Small:
         prevent undeletion of horde chars while alliance, vice versa
         modify active status & active chars fields of char & user
 
-    check username at least 1 character.
 """
 app = Flask(__name__)
 
@@ -61,8 +60,8 @@ def about():
 @app.route('/account', methods=['POST', 'GET'])
 def account():
     """
-    curl -H "Content-type: application/json" -X POST http://127.0.0.1:5000/account -d '{"username" : "Jae"}'
-    curl -H "Content-type: application/json" -X POST http://127.0.0.1:5000/account
+    curl -X POST http://127.0.0.1:5000/account -d '{"username" : "Jae"}'
+    curl -X GET http://127.0.0.1:5000/account
     """
     if request.method == 'POST':
         try:
@@ -94,7 +93,7 @@ def account():
 @app.route('/account/<account_name>/characters', methods=['POST'])
 def new_char(account_name):
     """
-    curl -H "Content-type: application/json" -X POST http://127.0.0.1:5000/account/Jae/characters -d '{"name": "Jar", "race": "orc", "class": "warrior", "faction": "horde", "level": 80}'
+    curl -X POST http://127.0.0.1:5000/account/Jae/characters -d '{"name": "Jar", "race": "orc", "class": "warrior", "faction": "horde", "level": 80}'
     """
     try:
         char_name = request.get_json(force=True)['name']
@@ -151,7 +150,7 @@ def new_char(account_name):
 @app.route('/account/<account_name>', methods=['DELETE'])
 def delete_account(account_name):
     """
-     curl -H "Content-type: application/json" -X DELETE http://127.0.0.1:5000/account/bob
+     curl -X DELETE http://127.0.0.1:5000/account/bob
     """
     user_acc = [acc for acc in accounts if acc['username'] == account_name]
 
@@ -169,7 +168,7 @@ def delete_account(account_name):
 @app.route('/account/<account_name>/characters/<char_name>', methods=['DELETE'])
 def delete_character(account_name, char_name):
     """
-    curl -H "Content-type: application/json" -X DELETE http://127.0.0.1:5000/account/bob/characters/Leeroy%20Jenkins
+    curl -X DELETE http://127.0.0.1:5000/account/bob/characters/Leeroy%20Jenkins
     """
     user_acc = [acc for acc in accounts if acc['username'] == account_name]
 
@@ -200,7 +199,7 @@ def delete_character(account_name, char_name):
 @app.route('/account/<account_name>/characters', methods=['GET'])
 def get_chars(account_name):
     """
-    curl -H "Content-type: application/json" -X GET http://127.0.0.1:5000/account/bob/characters
+    curl -X GET http://127.0.0.1:5000/account/bob/characters
 
     """
     user_acc = [acc for acc in accounts if acc['username'] == account_name]
