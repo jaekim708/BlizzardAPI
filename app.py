@@ -1,15 +1,9 @@
 from tornado.ioloop import IOLoop
-from tornado.web import RequestHandler, Application, url, asynchronous
+from tornado.web import RequestHandler, Application, url
 from tornado.escape import json_encode, json_decode
-from tornado.concurrent import Future
-from tornado.process import fork_processes
 from tornado import gen
 
 """
-Big:
-    move to database
-    figure out how to host website
-
 Small:
     clean up error message that occurs if not all required fields are provided
     error if delete function called w/Empty usernames
@@ -60,7 +54,11 @@ class BaseHandler(RequestHandler):
         else:
             self.write(json_encode({'Error code': status_code}))
         self.set_status = status_code
-        self.finish()
+        #self.finish()
+
+    def write(self, chunk):
+        if chunk is not None:
+            super(BaseHandler, self).write(chunk)
 
 class AboutHandler(BaseHandler):
     """
