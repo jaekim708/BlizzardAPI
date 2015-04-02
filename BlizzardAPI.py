@@ -1,7 +1,7 @@
 from tornado.ioloop import IOLoop
 from tornado.web import RequestHandler, Application, url
 from tornado.escape import json_encode, json_decode
-from tornado import gen
+from tornado import gen, httpserver
 
 """
 Jae Il Kim - Apr 2nd, 2015
@@ -60,6 +60,12 @@ CLASSES = frozenset(['Warrior', 'Druid', 'Death Knight', 'Mage'])
 HORDE = frozenset(['Orc', 'Tauren', 'Blood Elf'])
 ALLIANCE = frozenset(['Human', 'Gnome', 'Worgen'])
 
+# Account IDs (and character IDs) are assigned based on the number
+# of current accounts (or characters). This means that when accounts are
+# deleted account IDs may be reused. These variables exist to prevent that from
+# happening
+acc_id_offset = 0
+char_id_offset = 0
 
 class BaseHandler(RequestHandler):
     def write_error(self, status_code, message=None, **kwargs):
@@ -89,7 +95,7 @@ class AboutHandler(BaseHandler):
         Inputs:
             None
         Usage:
-            curl http://127.0.0.1:5000/account
+            curl http://127.0.0.1:5000/about
 
         Returns 200, with a body of {"author": "Jae Il Kim",
                                      "source": "BlizzardAPI.py"}
@@ -127,10 +133,10 @@ class AccountHandler(BaseHandler):
     def post(self):
         """
         Inputs:
-            {"username" : "NewUsername"}
+            {"name" : "NewUsername"}
         Usage:
             curl -X POST http://127.0.0.1:5000/account
-            -d '{"username" : "NewUsername"}'
+            -d '{"name" : "NewUsername"}'
 
         Returns 200, with a body of {"account_id" : new_acc_id}
 
@@ -144,12 +150,12 @@ class AccountHandler(BaseHandler):
         BattleTag Codes that go with them, but given the specifications of
         this API, accounts must be unique.
         """
+        self.set_header("Content-Type", "application/json")
         response = yield self.post_account()
         self.write(response)
 
     @gen.coroutine
     def post_account(self):
-        self.set_header("Content-Type", "application/json")
         input_obj = json_decode(self.request.body)
         try:
             new_username = input_obj['username']
@@ -183,7 +189,7 @@ class AccountHandler(BaseHandler):
                                   'been taken.')
             return
 
-        new_acc_id = len(accounts)
+        new_acc_id = len(accounts) + acc_id_offset
         new_user = {
             'account_id': new_acc_id,
             'username': new_username,
@@ -210,13 +216,13 @@ class CharactersHandler(BaseHandler):
         deleted characters belonging to the accountholder. Refer to the top
         of this file for information on what the characters field holds.
         """
+        self.set_header("Content-Type", "application/json")
         response = yield self.get_characters(account_name)
         self.write(response)
 
     @gen.coroutine
     def get_characters(self, account_name):
         user_acc = [acc for acc in accounts if acc['username'] == account_name]
-        print accounts, account_name
         if len(user_acc) == 0:
             self.write_error(404, 'Specified user not found.')
             return
@@ -276,6 +282,7 @@ class CharactersHandler(BaseHandler):
         to-be-undeleted character is the same as the faction that the
         accountholder is currently aligned to, the character will be undeleted.
         """
+        self.set_header("Content-Type", "application/json")
         response = yield self.post_characters(self.request.body, account_name)
         self.write(response)
 
@@ -284,9 +291,9 @@ class CharactersHandler(BaseHandler):
         try:
             input_dict = json_decode(input_obj)
             char_name = input_dict['name']
-            char_race = input_dict['race'].lower().capitalize()
-            char_class = input_dict['class'].lower().capitalize()
-            char_faction = input_dict['faction'].lower().capitalize()
+            char_race = input_dict['race'].lower().title()
+            char_class = input_dict['class'].lower().title()
+            char_faction = input_dict['faction'].lower().title()
             char_level = input_dict['level']
         except KeyError:
             self.write_error(404, 'Ill-formed, incomplete, or '
@@ -313,11 +320,18 @@ class CharactersHandler(BaseHandler):
                                   'alphabetical letters.')
             return
 
+        # check if there exists a character already with this char_name
         char_check = [char for char in characters if char['name'] == char_name]
         if len(char_check) > 0:
             existing_char = char_check[0]
-            if existing_char['username'] == account_name:
-                if existing_char != input_dict:
+            # get the account that this already-existing character belongs to
+            char_owner = [acc for acc in accounts if existing_char['char_id']
+                          in acc['char_ids'] + acc['deleted_char_ids']]
+            if char_owner[0]['username'] == account_name:
+                if (existing_char['class'] != char_class or
+                            existing_char['race'] != char_race or
+                            existing_char['faction'] != char_faction or
+                            existing_char['level'] != char_level):
                     self.write_error(400, 'To undelete a character, please '
                                           'provide the character\'s information'
                                           ' exactly as it was at the time of '
@@ -378,7 +392,7 @@ class CharactersHandler(BaseHandler):
                                   'opposite faction of the new character.')
             return
 
-        new_char_id = len(characters)
+        new_char_id = len(characters) + char_id_offset
         new_char = {
             'char_id': new_char_id,
             'name': char_name,
@@ -410,6 +424,7 @@ class AccDeleteHandler(BaseHandler):
         Deletes the specified account. This also deletes all characters,
         active and deleted, associated to this account.
         """
+        self.set_header("Content-Type", "application/json")
         response = yield self.delete_account(account_name)
         self.write(response)
 
@@ -418,14 +433,20 @@ class AccDeleteHandler(BaseHandler):
         user_acc = [acc for acc in accounts if acc['username'] == account_name]
 
         if len(user_acc) == 0:
-            print accounts, account_name
             self.write_error(404, 'Specified user not found.')
             return
         user_acc = user_acc[0]
 
+        global acc_id_offset
+        global char_id_offset
         for char_id in user_acc['char_ids'] + user_acc['deleted_char_ids']:
-            del characters[char_id]
+            #find character with this char_id
+            char_find = [char for char in characters
+                         if char['char_id'] == char_id]
+            characters.remove(char_find[0])
+            char_id_offset += 1
         del accounts[user_acc['account_id']]
+        acc_id_offset += 1
 
         raise gen.Return(json_encode({'message': 'Account -' + account_name +
                                       '- successfully deleted.'}))
@@ -451,6 +472,7 @@ class CharDeleteHandler(BaseHandler):
         The accountholder can later "undelete" this character to resume play
         on that character once more.
         """
+        self.set_header("Content-Type", "application/json")
         response = yield self.delete_char(account_name, char_name)
         self.write(response)
 
@@ -495,9 +517,6 @@ def make_app():
 
 def main():
     app = make_app()
-    #server = tornado.httpserver.HTTPServer(app)
-    #server.bind(5000)
-    #server.start(0)
     app.listen(5000)
     IOLoop.current().start()
 
