@@ -3,16 +3,6 @@ from tornado.web import RequestHandler, Application, url
 from tornado.escape import json_encode, json_decode
 from tornado import gen
 
-"""
-Small:
-
-    check user/character name validity
-
-    Undeletion -
-        modify active status & active chars fields of char & user
-"""
-
-
 accounts = [
     # {
     #     Sample Entry:
@@ -46,10 +36,11 @@ CLASSES = frozenset(['Warrior', 'Druid', 'Death Knight', 'Mage'])
 HORDE = frozenset(['Orc', 'Tauren', 'Blood Elf'])
 ALLIANCE = frozenset(['Human', 'Gnome', 'Worgen'])
 
+
 class BaseHandler(RequestHandler):
     def write_error(self, status_code, message=None, **kwargs):
         self.set_status = status_code
-        if(message is not None):
+        if message is not None:
             self.finish(json_encode({'Error code': status_code,
                                     'Description': message}))
         else:
@@ -58,6 +49,7 @@ class BaseHandler(RequestHandler):
     def write(self, chunk):
         if chunk is not None:
             super(BaseHandler, self).write(chunk)
+
 
 class AboutHandler(BaseHandler):
     @gen.coroutine
@@ -79,6 +71,7 @@ class AboutHandler(BaseHandler):
         raise gen.Return(json_encode(
             {'author': 'Jae Il Kim',
              'source': 'BlizzardAPI.py'}))
+
 
 class AccountHandler(BaseHandler):
     @gen.coroutine
@@ -114,11 +107,11 @@ class AccountHandler(BaseHandler):
         field at the top of this file for the default values new accounts
         are assigned.
 
-        Blizzard BattleTags (accounts here) are 3 to 12 characters long and
+        Accounts must be 3 to 12 characters long and
         cannot contain special characters, start with a number, or contain
-        spaces. BattleTags are not necessarily unique, as the BattleTag Code
-        (account_id here) can uniquely identify accounts with the same
-        BattleTag.
+        spaces. BattleTags are typically not necessarily unique, as they have
+        BattleTag Codes that go with them, but given the specifications of
+        this API, accounts must be unique.
         """
         response = yield self.post_account()
         self.write(response)
@@ -126,15 +119,15 @@ class AccountHandler(BaseHandler):
     @gen.coroutine
     def post_account(self):
         self.set_header("Content-Type", "application/json")
-        input = json_decode(self.request.body)
+        input_obj = json_decode(self.request.body)
         try:
-            new_username = input['username']
-        except KeyError, e:
+            new_username = input_obj['username']
+        except KeyError:
             self.write_error(404, 'Ill-formed, incomplete, or misspelled '
                                   'request.')
             return
 
-        if new_username == None:
+        if new_username is None:
             self.write_error(400, 'Please provide an account name.')
             return
 
@@ -152,6 +145,13 @@ class AccountHandler(BaseHandler):
                                   'non-alphanumeric characters')
             return
 
+        check_accs = [acc for acc in accounts if
+                      acc['username'] == new_username]
+        if len(check_accs) > 0:
+            self.write_error(400, 'Provided account name has already '
+                                  'been taken.')
+            return
+
         new_acc_id = len(accounts)
         new_user = {
             'account_id': new_acc_id,
@@ -162,7 +162,7 @@ class AccountHandler(BaseHandler):
             'link': '{http://127.0.0.1:5000/account/' + new_username + '}'
         }
         accounts.append(new_user)
-        raise gen.Return(json_encode({'account_id' : new_acc_id}))
+        raise gen.Return(json_encode({'account_id': new_acc_id}))
 
 
 class CharactersHandler(BaseHandler):
@@ -185,6 +185,7 @@ class CharactersHandler(BaseHandler):
     @gen.coroutine
     def get_characters(self, account_name):
         user_acc = [acc for acc in accounts if acc['username'] == account_name]
+        print accounts, account_name
         if len(user_acc) == 0:
             self.write_error(404, 'Specified user not found.')
             return
@@ -199,7 +200,8 @@ class CharactersHandler(BaseHandler):
                             'characters.'}))
         else:
             raise gen.Return(json_encode(
-                {'account_id': user_acc['account_id'],'characters': acc_chars}))
+                {'account_id': user_acc['account_id'],
+                 'characters': acc_chars}))
 
     @gen.coroutine
     def post(self, account_name):
@@ -247,15 +249,15 @@ class CharactersHandler(BaseHandler):
         self.write(response)
 
     @gen.coroutine
-    def post_characters(self, input, account_name):
+    def post_characters(self, input_obj, account_name):
         try:
-            input_dict = json_decode(input)
+            input_dict = json_decode(input_obj)
             char_name = input_dict['name']
             char_race = input_dict['race'].lower().capitalize()
             char_class = input_dict['class'].lower().capitalize()
             char_faction = input_dict['faction'].lower().capitalize()
             char_level = input_dict['level']
-        except KeyError, e:
+        except KeyError:
             self.write_error(404, 'Ill-formed, incomplete, or '
                                   'misspelled request.')
             return
@@ -266,7 +268,7 @@ class CharactersHandler(BaseHandler):
             return
         user_acc = user_acc[0]
 
-        if char_name == None:
+        if char_name is None:
             self.write_error(400, 'Please provide an account name.')
             return
 
@@ -290,8 +292,8 @@ class CharactersHandler(BaseHandler):
                                           ' exactly as it was at the time of '
                                           'deletion.')
                     return
-                if (user_acc['faction'] != None and
-                        existing_char['faction'] == user_acc['faction']):
+                if (user_acc['faction'] is not None and
+                        existing_char['faction'] != user_acc['faction']):
                     self.write_error(400, 'This character cannot be undeleted'
                                           ' because its faction does not '
                                           'match with the current faction of '
@@ -305,7 +307,7 @@ class CharactersHandler(BaseHandler):
                 user_acc['faction'] = existing_char['faction']
 
                 raise gen.Return(json_encode({'character_id':
-                                                  existing_char_id}))
+                                              existing_char_id}))
 
             else:
                 self.write_error(400, 'Provided character name has already '
@@ -325,17 +327,17 @@ class CharactersHandler(BaseHandler):
             return
 
         if (char_race in HORDE and char_faction == 'Alliance' or
-                char_race in ALLIANCE  and char_faction == 'horde'):
+                char_race in ALLIANCE  and char_faction == 'Horde'):
             self.write_error(400, 'The new character\'s race is not '
                                   'compatible with its given faction.')
             return
 
         if (char_class == 'Druid' and
-                (char_race != 'Tauren' and char_race != 'Worgen')):
+                char_race != 'Tauren' and char_race != 'Worgen'):
             self.write_error(400, 'Only Tauren or Worgen can be druids.')
             return
 
-        if (char_class == 'Warrior' and char_race == 'Blood Elf'):
+        if char_class == 'Warrior' and char_race == 'Blood Elf':
             self.write_error(400, 'Blood Elves cannot be warriors.')
             return
 
@@ -359,6 +361,7 @@ class CharactersHandler(BaseHandler):
         user_acc['char_ids'].append(new_char_id)
         user_acc['faction'] = char_faction
         raise gen.Return(json_encode({'character_id': new_char_id}))
+
 
 class AccDeleteHandler(BaseHandler):
     @gen.coroutine
@@ -384,6 +387,7 @@ class AccDeleteHandler(BaseHandler):
         user_acc = [acc for acc in accounts if acc['username'] == account_name]
 
         if len(user_acc) == 0:
+            print accounts, account_name
             self.write_error(404, 'Specified user not found.')
             return
         user_acc = user_acc[0]
@@ -422,9 +426,8 @@ class CharDeleteHandler(BaseHandler):
     @gen.coroutine
     def delete_char(self, account_name, char_name):
         user_acc = [acc for acc in accounts if acc['username'] == account_name]
-
         if len(user_acc) == 0:
-            self.write_error(404, 'Specified user not found.')
+            self.write_error(404, 'Specified user not found.', + account_name)
             return
         user_acc = user_acc[0]
 
@@ -449,13 +452,15 @@ class CharDeleteHandler(BaseHandler):
                                       '- belonging to -' + account_name +
                                       '- was successfully deleted.'}))
 
+
 def make_app():
     return Application([url(r"/about", AboutHandler),
                         url(r"/account", AccountHandler),
                         url(r"/account/(.*)/characters", CharactersHandler),
-                        url(r"/account/(.*)", AccDeleteHandler),
                         url(r"/account/(.*)/characters/(.*)",
-                            CharDeleteHandler)], debug=True)
+                            CharDeleteHandler),
+                        url(r"/account/(.*)", AccDeleteHandler)], debug=True)
+
 
 def main():
     app = make_app()
