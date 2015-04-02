@@ -18,29 +18,29 @@ Small:
 
 
 accounts = [
-    {
-        'account_id': 0,
-        'username': 'bob',
-        'faction': 'Alliance',
-        'char_ids': [0],
-        'deleted_char_ids': [],
-        'link': '{http://127.0.0.1:5000/account/bob}'
-
-    }
+    # {
+    #     'account_id': 0,
+    #     'username': 'bob',
+    #     'faction': 'Alliance',
+    #     'char_ids': [0],
+    #     'deleted_char_ids': [],
+    #     'link': '{http://127.0.0.1:5000/account/bob}'
+    #
+    # }
 
 ]
 
 characters = [
-    {
-        'char_id': 0,
-        'name': 'Leeroy Jenkins',
-        'level': 85,
-        'race': 'Human',
-        'class': 'Warrior',
-        'faction': 'Alliance',
-        'active': True
-
-    }
+    # {
+    #     'char_id': 0,
+    #     'name': 'Leeroy Jenkins',
+    #     'level': 85,
+    #     'race': 'Human',
+    #     'class': 'Warrior',
+    #     'faction': 'Alliance',
+    #     'active': True
+    #
+    # }
 ]
 
 FACTIONS = {'horde': ['orc', 'tauren', 'blood elf'],
@@ -48,13 +48,12 @@ FACTIONS = {'horde': ['orc', 'tauren', 'blood elf'],
 
 class BaseHandler(RequestHandler):
     def write_error(self, status_code, message=None, **kwargs):
+        self.set_status = status_code
         if(message is not None):
-            self.write(json_encode({'Error code': status_code,
+            self.finish(json_encode({'Error code': status_code,
                                     'Description': message}))
         else:
-            self.write(json_encode({'Error code': status_code}))
-        self.set_status = status_code
-        #self.finish()
+            self.finish(json_encode({'Error code': status_code}))
 
     def write(self, chunk):
         if chunk is not None:
@@ -69,9 +68,11 @@ class AboutHandler(BaseHandler):
         response = yield self.get_about()
         self.write(response)
 
+    @gen.coroutine
     def get_about(self):
-        raise gen.Return(json_encode({'author': 'Jae Il Kim',
-                                      'source': './app.py'}))
+        raise gen.Return(json_encode(
+            {'author': 'Jae Il Kim',
+             'source': 'BlizzardAPI.py'}))
 
 class AccountHandler(BaseHandler):
     """
@@ -89,17 +90,18 @@ class AccountHandler(BaseHandler):
 
     @gen.coroutine
     def post(self):
-        response = yield self.post_account(self.request.body)
+        response = yield self.post_account()
         self.write(response)
 
     @gen.coroutine
-    def post_account(self, input):
+    def post_account(self):
         self.set_header("Content-Type", "application/json")
         input = json_decode(self.request.body)
         try:
             new_username = input['username']
         except KeyError, e:
-            self.write_error(404, 'Ill-formed or misspelled request.')
+            self.write_error(404,
+                             'Ill-formed, incomplete, or misspelled request.')
             return
 
         new_acc_id = len(accounts)
@@ -108,8 +110,8 @@ class AccountHandler(BaseHandler):
             self.write_error(400, 'Account name not specified.')
             return
 
-        if len([acc for acc in accounts if
-                acc['username'] == new_username]) != 0:
+        if len(accounts) != 0 and len([acc for acc in accounts if
+                                       acc['username'] == new_username]) != 0:
             self.write_error(400, 'Account name already taken.')
             return
 
@@ -169,7 +171,8 @@ class CharactersHandler(BaseHandler):
             char_faction = input_dict['faction']
             char_level = input_dict['level']
         except KeyError, e:
-            self.write_error(404, 'Ill-formed or misspelled request.')
+            self.write_error(404,
+                             'Ill-formed, incomplete, or misspelled request.')
             return
 
         user_acc = [acc for acc in accounts if acc['username'] == account_name]
