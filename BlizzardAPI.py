@@ -3,11 +3,35 @@ from tornado.web import RequestHandler, Application, url
 from tornado.escape import json_encode, json_decode
 from tornado import gen
 
+"""
+Jae Il Kim - Apr 2nd, 2015
+BlizzardAPI.py
+Blizzard Web API Take Home Test
+
+This file uses the Tornado web framework to create an asynchronous web server
+in Python. Each HTTP request is handled by a function with the same name as
+the request - GET requests are handled by get(), and so on. These functions
+then asynchronously call helper functions. These helper functions, like
+get_account(), then perform the desired functionality specified in the test.
+
+Accounts and characters are stored as global lists of dictionaries,
+as described below. Note that in both accounts and characters are treated as
+JSON objects, which a lot of the functions below take as input or output,
+do not return their keys in any specific order. However, also note that
+JSON objects and Python dicts can be easily switched between one another,
+allowing ease of access to the data they store.
+
+Each function has an example curl command in its description to use as
+reference. HTTP requests should adhere to the formats specified in these
+reference commands in order to ensure functionality
+
+"""
+
 accounts = [
     # {
     #     Sample Entry:
     #     'account_id': 0,
-    #     'username': 'bob',
+    #     'username': 'Leeroy',
     #     'faction': 'Alliance',
     #     'char_ids': [0],
     #     'deleted_char_ids': [],
@@ -39,6 +63,9 @@ ALLIANCE = frozenset(['Human', 'Gnome', 'Worgen'])
 
 class BaseHandler(RequestHandler):
     def write_error(self, status_code, message=None, **kwargs):
+        """
+        Overridden to write custom error messages
+        """
         self.set_status = status_code
         if message is not None:
             self.finish(json_encode({'Error code': status_code,
@@ -47,6 +74,10 @@ class BaseHandler(RequestHandler):
             self.finish(json_encode({'Error code': status_code}))
 
     def write(self, chunk):
+        """
+        Overridden so that even if an asynchronous call fails due to incorrect
+        input the process can handle receiving a None response
+        """
         if chunk is not None:
             super(BaseHandler, self).write(chunk)
 

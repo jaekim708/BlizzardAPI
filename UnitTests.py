@@ -1,4 +1,4 @@
-import app
+import BlizzardAPI
 import requests as r
 import json
 
